@@ -31,24 +31,19 @@ const HEADERS = {
 
 const FLIGHT_SETTINGS = {
 	currency: 'EUR',
-	maxDeparturePrice: 70,
-	maxReturnPrice: 100,
-	departureDateRanges: {
+	maxPrice: 300,
+	dateRanges: {
 		min: getFlightDate(),
-		max: '2024-08-11',
-	},
-	returnDateRanges: {
-		min: '2024-08-12',
-		max: '2024-08-22',
+		max: '2024-08-25',
 	},
 }
 
-const RETURN_AIRPORT = {
+const INITIAL_AIRPORT = {
 	name: 'Sabiha Gokcen',
 	code: 'SAW',
 }
 
-const DEPARTURE_AIRPORTS = [
+const DESTINATION_AIRPORTS = [
 	{ name: 'Cologne', code: 'CGN' },
 	{ name: 'Dusseldorf', code: 'DUS' },
 	{ name: 'Dortmund', code: 'DTM' },
@@ -57,6 +52,12 @@ const DEPARTURE_AIRPORTS = [
 	{ name: 'Hannover', code: 'HAJ' },
 	{ name: 'Hamburg', code: 'HAM' },
 	{ name: 'Padderborn/Lippstadt', code: 'PAD' },
+	{ name: 'Stuttgart', code: 'STR' },
+	{ name: 'Nurenberg', code: 'NUE' },
+	{ name: 'Munich', code: 'MUC' },
+	{ name: 'Leipzig', code: 'LEJ' },
+	{ name: 'Berlin-Bradenburg', code: 'BER' },
+	{ name: 'Dresden', code: 'DRS' },
 ]
 
 const mailTransporter = nodemailer.createTransport({
@@ -84,72 +85,29 @@ const sendEmail = async html => {
 	}
 }
 
-function createDepartureFlightURL(airport, flight) {
-	return `https://web.flypgs.com/booking?language=en&adultCount=1&arrivalPort=${RETURN_AIRPORT.code}&departurePort=${airport.code}&currency=${FLIGHT_SETTINGS.currency}&dateOption=1&departureDate=${flight.date}`
+function createFlightURL(airport, flight) {
+	return `https://web.flypgs.com/booking?language=en&adultCount=1&arrivalPort=${airport.code}&departurePort=${INITIAL_AIRPORT.code}&currency=${FLIGHT_SETTINGS.currency}&dateOption=1&departureDate=${flight.date}`
 }
 
-function createReturnFlightURL(airport, flight) {
-	return `https://web.flypgs.com/booking?language=en&adultCount=1&arrivalPort=${airport.code}&departurePort=${RETURN_AIRPORT.code}&currency=${FLIGHT_SETTINGS.currency}&dateOption=1&departureDate=${flight.date}`
-}
+function createHTMLTemplate(results) {
+	let htmlContent = ''
 
-function createHTMLTemplate(departures, returns) {
-	// View flight filter settings
-	let htmlContent = `
-		<h1>Flight Filter Settings</h1>
-		<ul>
-			<li>Max departure price: ${FLIGHT_SETTINGS.maxDeparturePrice} ${FLIGHT_SETTINGS.currency}</li>
-			<li>Max return price: ${FLIGHT_SETTINGS.maxReturnPrice} ${FLIGHT_SETTINGS.currency}</li>
-			<li>Departure date ranges: ${dayjs(FLIGHT_SETTINGS.departureDateRanges.min).format('MMMM DD')} - ${dayjs(
-		FLIGHT_SETTINGS.departureDateRanges.max
-	).format('MMMM DD')}</li>
-			<li>Return date ranges: ${dayjs(FLIGHT_SETTINGS.returnDateRanges.min).format('MMMM DD')}  - ${dayjs(
-		FLIGHT_SETTINGS.returnDateRanges.max
-	).format('MMMM DD')}</li>
-		</ul>
-	`
-
-	htmlContent += `<hr>`
-
-	htmlContent += `<h1>Departure Flights</h1>`
-
-	departures.forEach(({ airport, flights }) => {
+	results.forEach(({ airport, flights }) => {
 		htmlContent += `
-			<h2>${airport.name} (${airport.code}) - Sabiha Gokcen (SAW)</h2>
-			<ul>
+			<strong>${INITIAL_AIRPORT.name} (${INITIAL_AIRPORT.code}) - ${airport.name} (${airport.code})</strong>
 		`
+		htmlContent += `<br>`
 		flights.forEach(flight => {
 			htmlContent += `
-				<li>
-					<a href="${createDepartureFlightURL(airport, flight)}">
-						${dayjs(flight.date).format('MMMM DD')} - ${flight.amount} ${flight.currency}
-					</a>
-				</li>
+				<a href="${createFlightURL(airport, flight)}">
+					${dayjs(flight.date, 'LL')} - ${flight.amount} ${flight.currency}
+				</a>
 			`
+
+			htmlContent += `<br>`
 		})
 
-		htmlContent += `</ul>`
-	})
-
-	htmlContent += `<hr>`
-
-	htmlContent += `<h1>Return Flights</h1>`
-
-	returns.forEach(({ airport, flights }) => {
-		htmlContent += `
-			<h2>Sabiha Gokcen (SAW) - ${airport.name} (${airport.code})</h2>
-			<ul>
-		`
-		flights.forEach(flight => {
-			htmlContent += `
-				<li>
-					<a href="${createReturnFlightURL(airport, flight)}">
-						${dayjs(flight.date, 'LL')} - ${flight.amount} ${flight.currency}
-					</a>
-				</li>
-			`
-		})
-
-		htmlContent += `</ul>`
+		htmlContent += `<br>`
 	})
 
 	return htmlContent
@@ -162,7 +120,7 @@ const getFlights = async (departureAirport, arrivalAirport) => {
 			{
 				depPort: departureAirport,
 				arrPort: arrivalAirport,
-				flightDate: getFlightDate(),
+				flightDate: '2024-08-18',
 				currency: FLIGHT_SETTINGS.currency,
 			},
 			{
@@ -192,20 +150,21 @@ const getFlights = async (departureAirport, arrivalAirport) => {
 }
 
 async function run() {
-	let departures = []
-	for (airport of DEPARTURE_AIRPORTS) {
-		const flights = await getFlights(airport.code, RETURN_AIRPORT.code)
+	let results = []
+
+	for (airport of DESTINATION_AIRPORTS) {
+		const flights = await getFlights(INITIAL_AIRPORT.code, airport.code)
 
 		if (flights.length > 0) {
 			const acceptableFlights = flights.filter(
 				f =>
-					f.amount <= FLIGHT_SETTINGS.maxDeparturePrice &&
-					f.date <= FLIGHT_SETTINGS.departureDateRanges.max &&
-					f.date >= FLIGHT_SETTINGS.departureDateRanges.min
+					f.amount <= FLIGHT_SETTINGS.maxPrice &&
+					f.date >= FLIGHT_SETTINGS.dateRanges.min &&
+					f.date <= FLIGHT_SETTINGS.dateRanges.max
 			)
 
 			if (acceptableFlights.length > 0) {
-				departures.push({
+				results.push({
 					airport,
 					flights: acceptableFlights,
 				})
@@ -213,34 +172,12 @@ async function run() {
 		}
 	}
 
-	let returns = []
-	for (airport of DEPARTURE_AIRPORTS) {
-		const flights = await getFlights(RETURN_AIRPORT.code, airport.code)
-
-		if (flights.length > 0) {
-			const acceptableFlights = flights.filter(
-				f =>
-					f.amount <= FLIGHT_SETTINGS.maxReturnPrice &&
-					f.date >= FLIGHT_SETTINGS.returnDateRanges.min &&
-					f.date <= FLIGHT_SETTINGS.returnDateRanges.max
-			)
-
-			if (acceptableFlights.length > 0) {
-				returns.push({
-					airport,
-					flights: acceptableFlights,
-				})
-			}
-		}
-	}
-
-	sendEmail(createHTMLTemplate(departures, returns))
+	sendEmail(createHTMLTemplate(results))
 }
 
+// Run script every 2 hours
 run()
-
-// // Run script every 1 hours
-// cron.schedule('0 */4 * * *', () => {
-// 	console.log('Running flight check')
-// 	run()
-// })
+cron.schedule('0 */2 * * *', () => {
+	console.log('Running flight check')
+	run()
+})
